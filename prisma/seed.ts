@@ -21,17 +21,17 @@ async function main() {
 
   // ─── 2. CRIAR UTILIZADOR DE TESTE ───────────────────────────────────────────
   // Utilizador para fazer login durante o desenvolvimento
-  // Email: martin@test.com | Senha: senha1234
-  const senhaHash = await bcrypt.hash('senha1234', 12)
+  // Email: martin@devisflash.fr | Senha: teste1234
+  const senhaHash = await bcrypt.hash('teste1234', 12)
 
   const utilizador = await prisma.user.create({
     data: {
       name: 'Martin Électricité',
-      email: 'martin@test.com',
+      email: 'martin@devisflash.fr',
       password: senhaHash,
     },
   })
-  console.log(`Utilizador criado: ${utilizador.email} (senha: senha1234)`)
+  console.log(`Utilizador criado: ${utilizador.email} (senha: teste1234)`)
 
   // ─── 3. CRIAR TENANT FICTÍCIO ────────────────────────────────────────────────
   const tenant = await prisma.tenant.create({
@@ -155,8 +155,8 @@ async function main() {
 
   console.log(`${pedidos.length} pedidos criados (5 pendentes, 3 processados).`)
   console.log('\nSeed concluído! Credenciais de teste:')
-  console.log('  Email: martin@test.com')
-  console.log('  Senha: senha1234')
+  console.log('  Email: martin@devisflash.fr')
+  console.log('  Senha: teste1234')
 }
 
 main()

@@ -23,7 +23,11 @@ export async function POST(req: Request) {
   const { nome, email, senha } = resultado.data
 
   // ── 2. Verificar unicidade do email ─────────────────────────────────────────
-  const utilizadorExistente = await prisma.user.findUnique({ where: { email } })
+  // select: { id: true } — só precisamos de saber se existe, não dos dados do utilizador
+  const utilizadorExistente = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true },
+  })
   if (utilizadorExistente) {
     return NextResponse.json(
       { erro: 'Este email já está registado.' },
