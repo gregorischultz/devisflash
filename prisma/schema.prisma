@@ -1,0 +1,56 @@
+// Prisma é a ferramenta que usamos para falar com a base de dados.
+// Este ficheiro descreve a estrutura das tabelas.
+
+generator client {
+  // Gera o código TypeScript para usarmos na aplicação
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // Usamos MySQL como base de dados
+  provider = "mysql"
+  // A string de conexão vem do ficheiro .env
+  url      = env("DATABASE_URL")
+}
+
+// Tabela de artisans — cada artisan tem uma conta no sistema
+model Artisan {
+  id        String   @id @default(cuid())
+  nome      String
+  email     String   @unique
+  telefone  String?
+  // Plano contratado: "basico" ou "pro"
+  plano     String   @default("basico")
+  criadoEm  DateTime @default(now())
+  // Um artisan pode ter muitos pedidos
+  pedidos   Pedido[]
+
+  @@map("artisans")
+}
+
+// Tabela de pedidos — cada pedido vem de um cliente final
+model Pedido {
+  id              String   @id @default(cuid())
+  // Nome e contacto do cliente que fez o pedido
+  nomeCliente     String
+  telefoneCliente String
+  // Descrição do problema enviada pelo cliente
+  descricao       String   @db.Text
+  // URL da foto enviada pelo cliente (guardada no Cloudflare R2)
+  fotoUrl         String?
+  // Tipo de trabalho detectado pela IA (ex: "eletricidade", "canalizacao")
+  tipoTrabalho    String?
+  // Urgência estimada pela IA: "baixa", "media", "alta"
+  urgencia        String?
+  // Valor estimado pela IA com base na tabela de preços
+  precoEstimado   Decimal? @db.Decimal(10, 2)
+  // Estado atual do pedido
+  estado          String   @default("pendente")
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
+  // Relação com o artisan dono deste pedido
+  artisanId      String
+  artisan        Artisan  @relation(fields: [artisanId], references: [id])
+
+  @@map("pedidos")
+}

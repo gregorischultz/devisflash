@@ -1,0 +1,9 @@
+/* Importa os estilos base do Tailwind CSS */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Estilo base do corpo da página */
+body {
+  @apply bg-gray-50 text-gray-900;
+}
