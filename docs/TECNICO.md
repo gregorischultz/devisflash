@@ -163,6 +163,80 @@ PENDENTE → PROCESSADO → CONFIRMADO
 
 ---
 
+## Autenticação
+
+O sistema usa **NextAuth.js v5 (Auth.js)** com o **Credentials Provider** — login por email e senha.
+
+### Como funciona o login
+
+1. O artisan acede a `/login` e preenche email + senha
+2. O NextAuth chama a função `authorize` em `auth.ts`, que:
+   - Procura o utilizador na base de dados pelo email
+   - Compara a senha enviada com o hash guardado no campo `User.password` usando `bcrypt`
+   - Se tudo estiver correto, devolve o utilizador → é criado um JWT (cookie de sessão)
+3. O middleware em `middleware.ts` lê o cookie em cada pedido e redireciona para `/login` se não estiver autenticado
+
+### Como a sessão é guardada
+
+Usamos estratégia **JWT** (não database sessions). Isso significa:
+- A sessão fica num cookie `httpOnly` encriptado no browser do utilizador
+- A base de dados **não** é consultada a cada pedido para validar a sessão (mais rápido)
+- O cookie contém: `id`, `email`, `name` e `tenantId` do utilizador
+
+### Como ler a sessão no código
+
+**Em Server Components** (recomendado — não faz pedido extra ao servidor):
+```ts
+import { auth } from '@/auth'
+
+const session = await auth()
+const tenantId = session?.user?.tenantId
+```
+
+**Em Client Components** (quando precisas de reatividade):
+```ts
+import { useSession } from 'next-auth/react'
+
+const { data: session } = useSession()
+const tenantId = session?.user?.tenantId
+```
+
+### Como adicionar novos artisans
+
+**Opção A — Página de registo (atual):**
+1. O artisan acede a `/registo`
+2. Preenche nome do negócio, email e senha
+3. A API route `/api/auth/registar` cria um `User` (com senha em hash bcrypt) e um `Tenant` ligados
+
+**Opção B — Via script (para criar artisans manualmente em produção):**
+```bash
+# Temporariamente, usa o seed como base e adapta os dados
+npm run db:seed
+```
+
+**Opção C — Via Stripe (Fase B):**
+Quando o artisan paga via Stripe, o webhook cria o `User` + `Tenant` automaticamente.
+
+### Segurança das senhas
+
+- As senhas são guardadas com **bcrypt** (fator 12) — nunca em texto puro
+- Mesmo que a base de dados seja comprometida, as senhas não são recuperáveis
+- O `NEXTAUTH_SECRET` encripta os cookies de sessão — gera um novo com `openssl rand -base64 32`
+
+### Ficheiros relevantes
+
+| Ficheiro | O que faz |
+|---|---|
+| `auth.ts` | Configuração central do NextAuth (providers, callbacks, sessão) |
+| `middleware.ts` | Protege rotas — redireciona para /login se não autenticado |
+| `app/api/auth/[...nextauth]/route.ts` | Handler das rotas do NextAuth (/api/auth/*) |
+| `app/api/auth/registar/route.ts` | API para criar novos utilizadores |
+| `app/login/page.tsx` | Página de login |
+| `app/registo/page.tsx` | Página de registo de novos artisans |
+| `types/next-auth.d.ts` | Extensão dos tipos TypeScript do NextAuth (adiciona `tenantId`) |
+
+---
+
 ## Decisões Técnicas
 
 > *Esta secção será preenchida ao longo do projecto, documentando as escolhas importantes e o raciocínio por trás delas.*

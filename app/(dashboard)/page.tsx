@@ -26,7 +26,6 @@ export default function Dashboard() {
   )
 }
 
-// Componente interno para os cartões de resumo
 function CartaoResumo({
   titulo,
   valor,
@@ -36,7 +35,6 @@ function CartaoResumo({
   valor: string
   cor: 'blue' | 'yellow' | 'green'
 }) {
-  // Define as cores de cada cartão com base no parâmetro recebido
   const cores = {
     blue: 'bg-blue-50 text-blue-700',
     yellow: 'bg-yellow-50 text-yellow-700',

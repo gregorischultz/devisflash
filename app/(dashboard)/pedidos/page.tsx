@@ -36,7 +36,6 @@ export default function Pedidos() {
             </tr>
           </thead>
           <tbody>
-            {/* Mensagem quando não há pedidos */}
             <tr>
               <td colSpan={6} className="px-6 py-12 text-center text-gray-400">
                 Ainda não há pedidos. Quando chegarem via WhatsApp ou formulário, aparecem aqui.

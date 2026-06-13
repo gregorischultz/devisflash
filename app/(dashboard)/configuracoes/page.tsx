@@ -9,7 +9,6 @@ export default function Configuracoes() {
       </div>
 
       <div className="space-y-6 max-w-2xl">
-        {/* Secção: Dados pessoais */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="font-semibold text-gray-900 mb-4">Dados Pessoais</h2>
           <div className="space-y-4">
@@ -22,7 +21,6 @@ export default function Configuracoes() {
           </button>
         </div>
 
-        {/* Secção: Tabela de preços */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="font-semibold text-gray-900 mb-1">Tabela de Preços</h2>
           <p className="text-sm text-gray-500 mb-4">
@@ -38,7 +36,6 @@ export default function Configuracoes() {
           </button>
         </div>
 
-        {/* Secção: Plano atual */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="font-semibold text-gray-900 mb-2">Plano Atual</h2>
           <div className="flex items-center gap-3">
@@ -56,7 +53,6 @@ export default function Configuracoes() {
   )
 }
 
-// Componente reutilizável para campos de formulário
 function Campo({
   label,
   placeholder,

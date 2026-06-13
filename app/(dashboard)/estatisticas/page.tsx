@@ -8,7 +8,6 @@ export default function Estatisticas() {
         <p className="text-gray-500 mt-1">Acompanha o desempenho do teu negócio.</p>
       </div>
 
-      {/* Métricas principais */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {[
           { titulo: 'Total de pedidos', valor: '0', descricao: 'desde o início' },
@@ -24,7 +23,6 @@ export default function Estatisticas() {
         ))}
       </div>
 
-      {/* Espaço reservado para gráficos — serão adicionados depois */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <h2 className="font-semibold text-gray-900 mb-4">Pedidos por semana</h2>
         <div className="h-48 flex items-center justify-center text-gray-400 text-sm">

@@ -11,22 +11,18 @@ datasource db {
 }
 
 // ─── ENUMS ────────────────────────────────────────────────────────────────────
-// Enums são listas de valores fixos — o campo só pode ter um destes valores.
 
-// Planos de subscrição disponíveis no sistema
 enum Plano {
   BASICO
   PRO
 }
 
-// Nível de urgência de um pedido, estimado pela IA
 enum Urgencia {
   BAIXA
   MEDIA
   ALTA
 }
 
-// Estado do ciclo de vida de um pedido
 enum StatusPedido {
   PENDENTE    // Chegou, ainda não foi processado pela IA
   PROCESSADO  // A IA já classificou, estimou urgência e gerou orçamento
@@ -34,39 +30,99 @@ enum StatusPedido {
   CANCELADO   // O trabalho não vai avançar
 }
 
-// ─── TABELAS ──────────────────────────────────────────────────────────────────
+// ─── MODELOS DE AUTENTICAÇÃO (NextAuth) ───────────────────────────────────────
+// Estas quatro tabelas são necessárias para o NextAuth funcionar com Prisma.
+// Não precisas de as editar manualmente — o NextAuth gere-as automaticamente.
+
+// Utilizador que faz login no sistema (o artisan, não o cliente final)
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  // Senha com hash bcrypt — NUNCA guardamos a senha em texto puro
+  password      String?
+  accounts      Account[]
+  sessions      Session[]
+  // Relação 1-para-1 com Tenant: cada utilizador gere um negócio
+  tenant        Tenant?
+
+  @@map("users")
+}
+
+// Ligação a fornecedores OAuth externos (Google, GitHub, etc.)
+// Não usamos no início, mas o NextAuth precisa desta tabela
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+// Sessões de utilizador (usadas quando a estratégia é "database", não "jwt")
+// Incluída para compatibilidade com o adapter do Prisma
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+// Tokens temporários para verificação de email (magic links)
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ─── MODELOS DE NEGÓCIO ───────────────────────────────────────────────────────
 
 // Tenant = cada artisan que tem uma conta no sistema
-// "Tenant" é um termo técnico para "cliente do SaaS" (o artisan, não o cliente final)
 model Tenant {
   id          String   @id @default(cuid())
   nome        String
   email       String   @unique
   telefone    String?
   plano       Plano    @default(BASICO)
-  // Cor principal da marca do artisan (usada na personalização visual no plano PRO)
   corPrimaria String   @default("#2563eb")
-  // URL do logótipo (apenas plano PRO; guardado no Cloudflare R2)
   logoUrl     String?
   criadoEm   DateTime @default(now())
 
-  // Um tenant tem muitos serviços na tabela de preços
+  // Relação 1-para-1 com User — o utilizador que faz login neste tenant
+  userId   String? @unique
+  user     User?   @relation(fields: [userId], references: [id])
+
   servicos PrecoServico[]
-  // Um tenant tem muitos pedidos de clientes
   pedidos  Pedido[]
 
   @@map("tenants")
 }
 
 // Tabela de preços por categoria de serviço, por tenant
-// Cada artisan tem os seus próprios preços — é aqui que ficam guardados
 model PrecoServico {
   id        String   @id @default(cuid())
   tenantId  String
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
-  // Categoria do trabalho (ex: "tomada_interruptor", "quadro_electrico")
   categoria String
-  // Preço mínimo e máximo para esta categoria (a IA usa estes valores para estimar)
   precoMin  Decimal  @db.Decimal(10, 2)
   precoMax  Decimal  @db.Decimal(10, 2)
   criadoEm DateTime @default(now())
@@ -79,19 +135,16 @@ model Pedido {
   id              String       @id @default(cuid())
   tenantId        String
   tenant          Tenant       @relation(fields: [tenantId], references: [id])
-  // Dados do cliente que fez o pedido
   nomeCliente     String
   telefoneCliente String
-  // Descrição do problema em texto livre
   descricao       String       @db.Text
-  // URL da foto enviada pelo cliente (guardada no Cloudflare R2)
   fotoUrl         String?
   // Campos preenchidos pela IA após processamento
-  categoria       String?      // Categoria detectada (ex: "tomada_interruptor")
-  urgencia        Urgencia?    // Urgência estimada: BAIXA, MEDIA ou ALTA
-  precoMin        Decimal?     @db.Decimal(10, 2) // Faixa de preço mínimo
-  precoMax        Decimal?     @db.Decimal(10, 2) // Faixa de preço máximo
-  precoEstimado   Decimal?     @db.Decimal(10, 2) // Valor pontual estimado
+  categoria       String?
+  urgencia        Urgencia?
+  precoMin        Decimal?     @db.Decimal(10, 2)
+  precoMax        Decimal?     @db.Decimal(10, 2)
+  precoEstimado   Decimal?     @db.Decimal(10, 2)
   status          StatusPedido @default(PENDENTE)
   criadoEm       DateTime     @default(now())
   atualizadoEm   DateTime     @updatedAt
