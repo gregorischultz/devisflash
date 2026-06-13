@@ -237,6 +237,94 @@ Quando o artisan paga via Stripe, o webhook cria o `User` + `Tenant` automaticam
 
 ---
 
+## Segurança e Isolamento de Dados
+
+### O problema que este mecanismo resolve
+
+O devisflash é multi-tenant: vários artisans partilham a mesma base de dados, mas **cada um só pode ver e editar os seus próprios dados**. Sem proteção explícita, um artisan mal-intencionado poderia tentar aceder aos pedidos de outro mudando um ID na URL.
+
+Exemplo de ataque sem proteção:
+```
+GET /api/pedidos/clm1234abc   ← ID de um pedido do Tenant B
+```
+Se a API simplesmente buscasse o pedido pelo ID sem verificar a quem pertence, o Tenant A veria dados do Tenant B.
+
+### Como funciona a proteção
+
+A proteção está em duas camadas:
+
+**Camada 1 — Middleware (`middleware.ts`)**
+- Corre antes de qualquer pedido ao servidor
+- Rotas protegidas: tudo exceto `/login`, `/registo`, `/pedido/*`, `/api/auth/*`, `/api/process-pedido`, `/api/upload`
+- Se não há sessão: devolve `401` para APIs, redireciona para `/login` para páginas
+
+**Camada 2 — Helpers de autorização (`lib/auth.ts`)**
+- Cada API route protegida verifica o `tenantId` da sessão antes de aceder à BD
+- **Regra de ouro: nunca confiar no `tenantId` vindo do URL ou do body — usar sempre o da sessão**
+
+### As duas funções principais
+
+**`exigirTenantAutenticado()`** — para endpoints que listam ou criam recursos:
+```ts
+import { exigirTenantAutenticado } from '@/lib/auth'
+
+export async function GET() {
+  const { tenantId, erro } = await exigirTenantAutenticado()
+  if (erro) return erro  // devolve 401 se não autenticado
+
+  // tenantId é string garantida a partir daqui
+  const pedidos = await prisma.pedido.findMany({
+    where: { tenantId },  // filtra SEMPRE pelo tenant da sessão
+  })
+  return NextResponse.json(pedidos)
+}
+```
+
+**`verificarAcessoTenant(tenantIdDoRecurso)`** — para endpoints que acedem a um recurso por ID:
+```ts
+import { verificarAcessoTenant } from '@/lib/auth'
+
+export async function GET(req, { params }) {
+  const pedido = await prisma.pedido.findUnique({ where: { id: params.id } })
+  if (!pedido) return NextResponse.json({ erro: 'Não encontrado' }, { status: 404 })
+
+  // Compara o tenantId do pedido com o da sessão
+  const { autorizado, erro } = await verificarAcessoTenant(pedido.tenantId)
+  if (!autorizado) return erro  // devolve 403 se for de outro tenant
+
+  return NextResponse.json(pedido)
+}
+```
+
+### Mapa de rotas públicas vs. protegidas
+
+| Rota | Pública? | Motivo |
+|---|---|---|
+| `/login`, `/registo` | Sim | Páginas de autenticação |
+| `/pedido/[tenantId]` | Sim | Formulário que o artisan partilha com os seus clientes |
+| `/api/auth/*` | Sim | Rotas internas do NextAuth |
+| `/api/process-pedido` | Sim | Chamada pelo formulário público (sem login) |
+| `/api/upload` | Sim | Upload de fotos pelos clientes finais |
+| Todo o resto | **Não** | Requer sessão válida + validação de tenant |
+
+### Fluxo de segurança num pedido típico
+
+```
+Cliente faz GET /api/pedidos/xyz
+        ↓
+Middleware verifica sessão
+  → sem sessão: devolve 401
+  → com sessão: continua
+        ↓
+API route busca pedido na BD pelo ID
+        ↓
+verificarAcessoTenant(pedido.tenantId)
+  → pedido.tenantId ≠ sessão.tenantId: devolve 403
+  → correspondem: devolve os dados
+```
+
+---
+
 ## Decisões Técnicas
 
 > *Esta secção será preenchida ao longo do projecto, documentando as escolhas importantes e o raciocínio por trás delas.*
