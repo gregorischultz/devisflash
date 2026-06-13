@@ -1,56 +1,100 @@
 // Prisma é a ferramenta que usamos para falar com a base de dados.
-// Este ficheiro descreve a estrutura das tabelas.
+// Este ficheiro descreve a estrutura de todas as tabelas.
 
 generator client {
-  // Gera o código TypeScript para usarmos na aplicação
   provider = "prisma-client-js"
 }
 
 datasource db {
-  // Usamos MySQL como base de dados
   provider = "mysql"
-  // A string de conexão vem do ficheiro .env
   url      = env("DATABASE_URL")
 }
 
-// Tabela de artisans — cada artisan tem uma conta no sistema
-model Artisan {
-  id        String   @id @default(cuid())
-  nome      String
-  email     String   @unique
-  telefone  String?
-  // Plano contratado: "basico" ou "pro"
-  plano     String   @default("basico")
-  criadoEm  DateTime @default(now())
-  // Um artisan pode ter muitos pedidos
-  pedidos   Pedido[]
+// ─── ENUMS ────────────────────────────────────────────────────────────────────
+// Enums são listas de valores fixos — o campo só pode ter um destes valores.
 
-  @@map("artisans")
+// Planos de subscrição disponíveis no sistema
+enum Plano {
+  BASICO
+  PRO
 }
 
-// Tabela de pedidos — cada pedido vem de um cliente final
+// Nível de urgência de um pedido, estimado pela IA
+enum Urgencia {
+  BAIXA
+  MEDIA
+  ALTA
+}
+
+// Estado do ciclo de vida de um pedido
+enum StatusPedido {
+  PENDENTE    // Chegou, ainda não foi processado pela IA
+  PROCESSADO  // A IA já classificou, estimou urgência e gerou orçamento
+  CONFIRMADO  // O artisan confirmou o agendamento com o cliente
+  CANCELADO   // O trabalho não vai avançar
+}
+
+// ─── TABELAS ──────────────────────────────────────────────────────────────────
+
+// Tenant = cada artisan que tem uma conta no sistema
+// "Tenant" é um termo técnico para "cliente do SaaS" (o artisan, não o cliente final)
+model Tenant {
+  id          String   @id @default(cuid())
+  nome        String
+  email       String   @unique
+  telefone    String?
+  plano       Plano    @default(BASICO)
+  // Cor principal da marca do artisan (usada na personalização visual no plano PRO)
+  corPrimaria String   @default("#2563eb")
+  // URL do logótipo (apenas plano PRO; guardado no Cloudflare R2)
+  logoUrl     String?
+  criadoEm   DateTime @default(now())
+
+  // Um tenant tem muitos serviços na tabela de preços
+  servicos PrecoServico[]
+  // Um tenant tem muitos pedidos de clientes
+  pedidos  Pedido[]
+
+  @@map("tenants")
+}
+
+// Tabela de preços por categoria de serviço, por tenant
+// Cada artisan tem os seus próprios preços — é aqui que ficam guardados
+model PrecoServico {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  // Categoria do trabalho (ex: "tomada_interruptor", "quadro_electrico")
+  categoria String
+  // Preço mínimo e máximo para esta categoria (a IA usa estes valores para estimar)
+  precoMin  Decimal  @db.Decimal(10, 2)
+  precoMax  Decimal  @db.Decimal(10, 2)
+  criadoEm DateTime @default(now())
+
+  @@map("precos_servico")
+}
+
+// Cada pedido de orçamento feito por um cliente final
 model Pedido {
-  id              String   @id @default(cuid())
-  // Nome e contacto do cliente que fez o pedido
+  id              String       @id @default(cuid())
+  tenantId        String
+  tenant          Tenant       @relation(fields: [tenantId], references: [id])
+  // Dados do cliente que fez o pedido
   nomeCliente     String
   telefoneCliente String
-  // Descrição do problema enviada pelo cliente
-  descricao       String   @db.Text
+  // Descrição do problema em texto livre
+  descricao       String       @db.Text
   // URL da foto enviada pelo cliente (guardada no Cloudflare R2)
   fotoUrl         String?
-  // Tipo de trabalho detectado pela IA (ex: "eletricidade", "canalizacao")
-  tipoTrabalho    String?
-  // Urgência estimada pela IA: "baixa", "media", "alta"
-  urgencia        String?
-  // Valor estimado pela IA com base na tabela de preços
-  precoEstimado   Decimal? @db.Decimal(10, 2)
-  // Estado atual do pedido
-  estado          String   @default("pendente")
-  criadoEm       DateTime @default(now())
-  atualizadoEm   DateTime @updatedAt
-  // Relação com o artisan dono deste pedido
-  artisanId      String
-  artisan        Artisan  @relation(fields: [artisanId], references: [id])
+  // Campos preenchidos pela IA após processamento
+  categoria       String?      // Categoria detectada (ex: "tomada_interruptor")
+  urgencia        Urgencia?    // Urgência estimada: BAIXA, MEDIA ou ALTA
+  precoMin        Decimal?     @db.Decimal(10, 2) // Faixa de preço mínimo
+  precoMax        Decimal?     @db.Decimal(10, 2) // Faixa de preço máximo
+  precoEstimado   Decimal?     @db.Decimal(10, 2) // Valor pontual estimado
+  status          StatusPedido @default(PENDENTE)
+  criadoEm       DateTime     @default(now())
+  atualizadoEm   DateTime     @updatedAt
 
   @@map("pedidos")
 }
