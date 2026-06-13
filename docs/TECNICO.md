@@ -237,6 +237,72 @@ Quando o artisan paga via Stripe, o webhook cria o `User` + `Tenant` automaticam
 
 ---
 
+## Validação de Dados
+
+Todos os endpoints que recebem dados externos usam **zod** para validar o input **antes** de qualquer operação na base de dados ou chamada à API Claude. Isto tem três vantagens:
+
+1. **Economiza tokens de IA** — uma descrição com 10 000 caracteres nunca chega ao Claude
+2. **Protege a BD** — tipos errados nunca chegam ao Prisma
+3. **Erros claros** — o cliente recebe uma mensagem em português em vez de um crash 500
+
+### Onde estão os schemas
+
+Todos os schemas ficam em `lib/validations.ts` para evitar duplicação:
+
+| Schema | Usado em |
+|---|---|
+| `schemaPedido` | `POST /api/process-pedido` |
+| `schemaRegistar` | `POST /api/auth/registar` |
+| `schemaTenantUpdate` | `PATCH /api/tenant` |
+| `validarFicheiroImagem()` | `POST /api/upload` |
+
+### Padrão de uso (JSON endpoints)
+
+```ts
+import { schemaPedido, erroValidacao } from '@/lib/validations'
+
+// 1. Tenta fazer parse do body (protege contra body malformado)
+let body: unknown
+try {
+  body = await req.json()
+} catch {
+  return NextResponse.json({ erro: 'Body inválido — esperado JSON.' }, { status: 400 })
+}
+
+// 2. Valida com zod — devolve 400 imediatamente se inválido
+const resultado = schemaPedido.safeParse(body)
+if (!resultado.success) return erroValidacao(resultado.error)
+
+// 3. A partir daqui, resultado.data está garantidamente tipado e válido
+const { nomeCliente, descricao, ... } = resultado.data
+```
+
+### Padrão de uso (upload de ficheiros)
+
+```ts
+import { validarFicheiroImagem } from '@/lib/validations'
+
+const ficheiro = formData.get('ficheiro')
+if (!(ficheiro instanceof File)) { /* erro */ }
+
+// Valida tipo (JPG/PNG/WebP) e tamanho (máx. 5 MB) antes do upload para R2
+const erro = validarFicheiroImagem(ficheiro)
+if (erro) return erro  // devolve 400 com mensagem clara
+```
+
+### Limites definidos
+
+| Campo | Limite | Motivo |
+|---|---|---|
+| `descricao` | máx. 2 000 caracteres | Evita prompts gigantes na API Claude |
+| `nome` (cliente/negócio) | máx. 100–200 caracteres | Evita overflow na UI |
+| `senha` | mín. 8, máx. 100 caracteres | Segurança mínima + evitar bcrypt lento com strings enormes |
+| `telefone` | 6–30 caracteres, só `+`, dígitos, espaços | Formato internacional |
+| `corPrimaria` | regex `#rrggbb` | Só cores hexadecimais válidas |
+| ficheiro de upload | máx. 5 MB, tipos: JPG/PNG/WebP | Custo de armazenamento + segurança |
+
+---
+
 ## Segurança e Isolamento de Dados
 
 ### O problema que este mecanismo resolve
