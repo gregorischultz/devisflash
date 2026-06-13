@@ -1,20 +1,27 @@
 // Endpoint público — chamado pelo formulário do cliente final (/pedido/[tenantId]).
 // Não requer autenticação: é o cliente (dono de casa, etc.) que submete o pedido.
 //
-// Fluxo:
-//   1. Validar dados com zod (antes de qualquer outra operação)
+// Fluxo (por ordem de execução):
+//   0. Rate limiting — bloqueia se o IP excedeu 5 pedidos/hora
+//   1. Validação com zod — antes de qualquer operação na BD ou API Claude
 //   2. Verificar que o tenant existe
 //   3. Criar o Pedido na BD com status PENDENTE
-//   4. [TODO] Chamar a IA para classificar e gerar orçamento (assíncrono)
+//   4. [TODO] Chamar a IA para classificar e gerar orçamento
 
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { schemaPedido, erroValidacao } from '@/lib/validations'
+import { verificarRateLimit, extrairIpDoRequest } from '@/lib/rate-limit'
 
 export async function POST(req: Request) {
-  // ── 1. Parse e validação ────────────────────────────────────────────────────
-  // A validação acontece ANTES de qualquer acesso à BD ou à API Claude.
-  // Se os dados são inválidos, não gastamos recursos desnecessários.
+  // ── 0. Rate limiting ────────────────────────────────────────────────────────
+  // Primeira coisa a verificar — se o IP já excedeu o limite, não fazemos nada mais.
+  // Isto evita que um bot pague tokens de IA ao enviar centenas de pedidos.
+  const ip = extrairIpDoRequest(req)
+  const limiteAtingido = await verificarRateLimit(ip, 'process-pedido')
+  if (limiteAtingido) return limiteAtingido
+
+  // ── 1. Parse e validação com zod ────────────────────────────────────────────
   let body: unknown
   try {
     body = await req.json()
@@ -30,7 +37,6 @@ export async function POST(req: Request) {
   const { tenantId, nomeCliente, telefoneCliente, descricao, fotoUrl } = resultado.data
 
   // ── 2. Verificar que o tenant existe ────────────────────────────────────────
-  // O tenantId vem do formulário público. Confirmamos que é válido antes de criar o pedido.
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
     select: { id: true, nome: true },
@@ -51,25 +57,18 @@ export async function POST(req: Request) {
       telefoneCliente,
       descricao,
       fotoUrl: fotoUrl ?? null,
-      // Status inicial: PENDENTE — a IA ainda não processou
       status: 'PENDENTE',
     },
-    select: {
-      id: true,
-      nomeCliente: true,
-      status: true,
-      criadoEm: true,
-    },
+    select: { id: true },
   })
 
   // ── 4. Disparar processamento pela IA ───────────────────────────────────────
-  // [TODO: Fase A] Aqui chamamos /api/ai/processar com o pedido.id
-  // Por agora, o pedido fica PENDENTE e será processado manualmente ou num job.
+  // [TODO: Fase A] Chamar /api/ai/processar com pedido.id de forma assíncrona
 
   return NextResponse.json(
     {
       sucesso: true,
-      mensagem: `Pedido recebido! ${tenant.nome} vai entrar em contacto em breve.`,
+      mensagem: `Pedido recebido ! ${tenant.nome} vous contactera très bientôt.`,
       pedidoId: pedido.id,
     },
     { status: 201 }

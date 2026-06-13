@@ -237,6 +237,55 @@ Quando o artisan paga via Stripe, o webhook cria o `User` + `Tenant` automaticam
 
 ---
 
+## Rate Limiting
+
+### Problema que resolve
+
+O formulário público `/pedido/[tenantId]` pode ser alvo de bots que submetem centenas de pedidos por minuto. Cada pedido dispara uma chamada à API Claude (custo real). Sem proteção, um atacante podia esgotar o crédito de IA em minutos.
+
+### Como funciona
+
+Usamos uma tabela MySQL (`rate_limits`) em vez de Redis — sem serviços externos pagos, suficiente para o volume inicial.
+
+**A cada pedido:**
+1. Apaga registos com mais de 1 hora (limpeza automática, sem cron job)
+2. Conta quantos registos este IP tem neste endpoint na última hora
+3. Se `>= 5`: devolve `429` com mensagem em francês e header `Retry-After: 3600`
+4. Se `< 5`: regista o pedido na tabela e continua
+
+**Tudo em transação** para reduzir race conditions.
+
+### Endpoints protegidos
+
+| Endpoint | Chave na tabela | Limite |
+|---|---|---|
+| `POST /api/process-pedido` | `'process-pedido'` | 5 / hora / IP |
+| Página `/pedido/[tenantId]` | `'pedido-page'` | 5 / hora / IP |
+
+Os dois contadores são **independentes** — carregar a página não consome o limite de submissões.
+
+### Como ajustar o limite
+
+Edita as constantes no topo de `lib/rate-limit.ts`:
+
+```ts
+export const LIMITE_POR_HORA = 5   // ← muda este número
+const JANELA_MS = 60 * 60 * 1000   // ← ou esta janela (em ms)
+```
+
+Não é necessário alterar o schema ou fazer migrações.
+
+### Limitação conhecida e caminho de upgrade
+
+A solução atual tem uma **race condition**: dois pedidos simultâneos podem ambos passar se chegarem exatamente ao mesmo tempo (ambos lêem `count=4` antes de qualquer um escrever). Na prática, com 5 pedidos/hora, isto é irrelevante.
+
+Quando o volume crescer (> 100 tenants ativos), migrar para **Upstash Redis** com `@upstash/ratelimit`:
+- Operação atómica via Lua script
+- Sem tabela na BD
+- Free tier suficiente até ~10 000 pedidos/dia
+
+---
+
 ## Validação de Dados
 
 Todos os endpoints que recebem dados externos usam **zod** para validar o input **antes** de qualquer operação na base de dados ou chamada à API Claude. Isto tem três vantagens:

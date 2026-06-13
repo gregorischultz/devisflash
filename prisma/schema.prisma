@@ -94,6 +94,23 @@ model VerificationToken {
   @@map("verification_tokens")
 }
 
+// ─── RATE LIMITING ────────────────────────────────────────────────────────────
+// Tabela simples para controlar quantos pedidos um IP fez por hora.
+// Não requer Redis nem serviços externos — é gerida diretamente no MySQL.
+
+model RateLimit {
+  id        String   @id @default(cuid())
+  // Endereço IP do utilizador (pode ser IPv4 ou IPv6)
+  ip        String
+  // Identificador do endpoint protegido (ex: "process-pedido", "pedido-page")
+  endpoint  String
+  criadoEm DateTime @default(now())
+
+  // Índice composto: acelera a query "quantos registos tem este IP neste endpoint na última hora?"
+  @@index([ip, endpoint, criadoEm])
+  @@map("rate_limits")
+}
+
 // ─── MODELOS DE NEGÓCIO ───────────────────────────────────────────────────────
 
 // Tenant = cada artisan que tem uma conta no sistema
