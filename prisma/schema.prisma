@@ -19,8 +19,9 @@ enum Plano {
 
 enum Urgencia {
   BAIXA
-  MEDIA
+  NORMAL
   ALTA
+  URGENTE
 }
 
 enum StatusPedido {
@@ -162,6 +163,10 @@ model Pedido {
   precoMin        Decimal?     @db.Decimal(10, 2)
   precoMax        Decimal?     @db.Decimal(10, 2)
   precoEstimado   Decimal?     @db.Decimal(10, 2)
+  // Resposta gerada pela IA para enviar ao cliente (em francês)
+  respostaIA      String?      @db.Text
+  // Quando a IA processou o pedido
+  respondidoEm    DateTime?
   status          StatusPedido @default(PENDENTE)
   criadoEm       DateTime     @default(now())
   atualizadoEm   DateTime     @updatedAt

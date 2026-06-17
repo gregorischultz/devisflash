@@ -25,7 +25,12 @@ const campoCorHex = z
 
 // ─── SCHEMAS POR ENDPOINT ─────────────────────────────────────────────────────
 
-// Formulário público do cliente final → POST /api/process-pedido
+// Classificação de pedido pela IA → POST /api/process-pedido
+export const schemaProcessarPedido = z.object({
+  pedidoId: z.string().min(1, 'pedidoId em falta'),
+})
+
+// Formulário público do cliente final → POST /api/pedidos
 export const schemaPedido = z.object({
   tenantId: z.string().min(1, 'tenantId em falta'),
   nomeCliente: z

@@ -440,6 +440,82 @@ verificarAcessoTenant(pedido.tenantId)
 
 ---
 
+## API de Classificação
+
+### Fluxo completo de um pedido (público → IA → BD)
+
+Quando um cliente final preenche o formulário em `/pedido/[tenantId]`, acontecem dois pedidos HTTP em sequência:
+
+```
+Cliente preenche formulário
+         ↓
+POST /api/pedidos          ← Passo 1: criar o registo
+  - Valida body (zod)
+  - Verifica que o tenant existe
+  - Cria Pedido (status: PENDENTE)
+  - Devolve { pedidoId }
+         ↓
+POST /api/process-pedido   ← Passo 2: classificar com IA
+  - Recebe { pedidoId }
+  - Busca pedido + tenant + tabela de preços
+  - (Opcional) Busca imagem do R2 e converte para base64
+  - Constrói system prompt com os preços do tenant
+  - Chama Claude API (claude-sonnet-4-6)
+  - Faz parse do JSON da resposta
+  - Atualiza Pedido (categoria, urgência, preços, respostaIA, status: PROCESSADO)
+  - Devolve { sucesso, pedido }
+         ↓
+Formulário mostra a resposta gerada pela IA ao cliente
+```
+
+O fluxo do dashboard é mais simples: o artisan seleciona um pedido PENDENTE e clica em "Processar" → apenas o Passo 2 é chamado (com sessão autenticada).
+
+### System prompt
+
+O prompt é gerado dinamicamente com os dados reais do tenant:
+
+```
+Tu es un assistant pour l'artisan "<nome do tenant>".
+Analyse cette demande de devis et:
+1. Classe la catégorie du travail parmi: <lista de categorias>
+2. Détermine l'urgence: BAIXA, NORMAL, ALTA, URGENTE
+3. Si une catégorie correspond dans la liste de prix...
+4. Génère une réponse professionnelle en français (max 100 mots)...
+5. Réponds UNIQUEMENT en JSON: {categoria, urgencia, precoMin, precoMax, resposta}
+
+Tarifs disponibles:
+  - tomada_interruptor: de €40 à €80
+  - quadro_electrico: de €200 à €450
+  ...
+```
+
+### Tratamento de erros da IA
+
+| Cenário | Comportamento |
+|---|---|
+| API Claude fora do ar | Pedido mantém status `PENDENTE`, resposta `500` com mensagem em francês |
+| Resposta não é JSON válido | Mesma coisa — o regex extrai JSON de blocos ` ```json ``` ` mas se falhar, cai no catch |
+| Urgência desconhecida | Normalizado para `NORMAL` — nunca grava um valor fora do enum |
+| Imagem inacessível no R2 | Log de erro, continua sem imagem (análise só por texto) |
+
+### Segurança no endpoint de classificação
+
+O `POST /api/process-pedido` funciona em dois modos:
+
+- **Sem sessão** (formulário público): qualquer pedido pode ser processado pelo pedidoId — sem verificação de tenant. Protegido por rate limit (5/hora/IP).
+- **Com sessão** (dashboard): verifica que o `pedido.tenantId` corresponde ao `tenantId` da sessão — impede que um artisan processe pedidos de outro.
+
+### Ficheiros relevantes
+
+| Ficheiro | O que faz |
+|---|---|
+| `app/api/pedidos/route.ts` | Cria pedidos a partir do formulário público |
+| `app/api/process-pedido/route.ts` | Classifica pedido existente com Claude AI |
+| `app/pedido/[tenantId]/FormularioPedido.tsx` | Formulário público do cliente (2 chamadas em sequência) |
+| `lib/validations.ts` → `schemaProcessarPedido` | Valida `{ pedidoId }` no endpoint de classificação |
+
+---
+
 ## Decisões Técnicas
 
 > *Esta secção será preenchida ao longo do projecto, documentando as escolhas importantes e o raciocínio por trás delas.*

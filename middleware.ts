@@ -15,7 +15,8 @@ const PREFIXOS_PUBLICOS = [
   '/registo',
   '/pedido',
   '/api/auth',
-  '/api/process-pedido',
+  '/api/pedidos',        // criação de pedido pelo formulário público
+  '/api/process-pedido', // classificação por IA (chamada após criação)
   '/api/upload',
 ]
 

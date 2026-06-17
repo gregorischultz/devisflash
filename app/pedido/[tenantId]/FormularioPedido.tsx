@@ -2,7 +2,11 @@
 
 // Formulário de pedido de orçamento — preenchido pelo cliente final.
 // Em francês porque o mercado alvo é Tours/França.
-// Submete para POST /api/process-pedido e mostra estado de sucesso/erro.
+//
+// Fluxo de 2 passos (transparente para o utilizador):
+//   1. POST /api/pedidos     → cria o pedido, devolve pedidoId
+//   2. POST /api/process-pedido → IA classifica e gera resposta em francês
+// O cliente vê apenas um botão e a resposta final da IA.
 
 import { useState } from 'react'
 
@@ -11,16 +15,18 @@ interface Props {
   corPrimaria: string
 }
 
-type EstadoForm = 'inativo' | 'enviando' | 'sucesso' | 'erro' | 'limite'
+type EstadoForm = 'inativo' | 'enviando' | 'processando' | 'sucesso' | 'erro' | 'limite'
 
 export default function FormularioPedido({ tenantId, corPrimaria }: Props) {
   const [estado, setEstado] = useState<EstadoForm>('inativo')
   const [mensagemErro, setMensagemErro] = useState('')
+  const [respostaIA, setRespostaIA] = useState('')
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setEstado('enviando')
     setMensagemErro('')
+    setRespostaIA('')
 
     const form = e.currentTarget
     const dados = {
@@ -31,26 +37,50 @@ export default function FormularioPedido({ tenantId, corPrimaria }: Props) {
     }
 
     try {
-      const resposta = await fetch('/api/process-pedido', {
+      // ── Passo 1: Criar o pedido ───────────────────────────────────────────
+      const respostaCriacao = await fetch('/api/pedidos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(dados),
       })
 
-      const json = await resposta.json()
+      const jsonCriacao = await respostaCriacao.json()
 
-      if (resposta.status === 429) {
-        // Rate limit atingido
+      if (respostaCriacao.status === 429) {
         setEstado('limite')
         return
       }
 
-      if (!resposta.ok) {
-        setMensagemErro(json.erro ?? 'Une erreur est survenue. Réessayez.')
+      if (!respostaCriacao.ok) {
+        setMensagemErro(jsonCriacao.erro ?? 'Une erreur est survenue. Réessayez.')
         setEstado('erro')
         return
       }
 
+      // ── Passo 2: Classificar com IA ───────────────────────────────────────
+      setEstado('processando')
+
+      const respostaIA = await fetch('/api/process-pedido', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pedidoId: jsonCriacao.pedidoId }),
+      })
+
+      const jsonIA = await respostaIA.json()
+
+      if (respostaIA.status === 429) {
+        setEstado('limite')
+        return
+      }
+
+      if (!respostaIA.ok) {
+        // A IA falhou mas o pedido foi criado — mostra sucesso simples sem resposta IA
+        setEstado('sucesso')
+        return
+      }
+
+      // Guarda a resposta da IA para mostrar ao cliente
+      setRespostaIA(jsonIA.pedido?.respostaIA ?? '')
       setEstado('sucesso')
     } catch {
       setMensagemErro('Impossible de contacter le serveur. Vérifiez votre connexion.')
@@ -61,14 +91,22 @@ export default function FormularioPedido({ tenantId, corPrimaria }: Props) {
   // ── Ecrã de sucesso ──────────────────────────────────────────────────────
   if (estado === 'sucesso') {
     return (
-      <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center shadow-sm">
-        <div className="text-5xl mb-4">✅</div>
-        <h2 className="text-xl font-bold text-gray-900 mb-2">
-          Demande envoyée !
-        </h2>
-        <p className="text-gray-500 text-sm">
-          Nous avons bien reçu votre demande. Vous serez contacté très bientôt.
-        </p>
+      <div className="bg-white rounded-2xl border border-gray-200 p-8 shadow-sm space-y-4">
+        <div className="text-center">
+          <div className="text-5xl mb-4">✅</div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Demande envoyée !</h2>
+        </div>
+
+        {respostaIA ? (
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+            <p className="text-sm font-medium text-blue-800 mb-1">Réponse de l&apos;artisan :</p>
+            <p className="text-sm text-blue-900">{respostaIA}</p>
+          </div>
+        ) : (
+          <p className="text-center text-gray-500 text-sm">
+            Nous avons bien reçu votre demande. Vous serez contacté très bientôt.
+          </p>
+        )}
       </div>
     )
   }
@@ -78,9 +116,7 @@ export default function FormularioPedido({ tenantId, corPrimaria }: Props) {
     return (
       <div className="bg-white rounded-2xl border border-red-100 p-8 text-center shadow-sm">
         <div className="text-4xl mb-4">⏳</div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-2">
-          Trop de demandes
-        </h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-2">Trop de demandes</h2>
         <p className="text-gray-500 text-sm">
           Trop de demandes. Veuillez réessayer dans une heure.
         </p>
@@ -89,6 +125,16 @@ export default function FormularioPedido({ tenantId, corPrimaria }: Props) {
   }
 
   // ── Formulário ───────────────────────────────────────────────────────────
+  const estaAProcessar = estado === 'enviando' || estado === 'processando'
+  const textosBotao = {
+    inativo: 'Envoyer ma demande',
+    enviando: 'Envoi en cours...',
+    processando: 'Analyse en cours...',
+    erro: 'Envoyer ma demande',
+    sucesso: 'Envoyer ma demande',
+    limite: 'Envoyer ma demande',
+  }
+
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
       <div className="p-6 border-b border-gray-100">
@@ -157,11 +203,11 @@ export default function FormularioPedido({ tenantId, corPrimaria }: Props) {
         {/* Botão de envio */}
         <button
           type="submit"
-          disabled={estado === 'enviando'}
+          disabled={estaAProcessar}
           className="w-full py-3 text-white font-medium rounded-lg text-sm transition-opacity disabled:opacity-60 disabled:cursor-not-allowed"
           style={{ backgroundColor: corPrimaria }}
         >
-          {estado === 'enviando' ? 'Envoi en cours...' : 'Envoyer ma demande'}
+          {textosBotao[estado]}
         </button>
 
         <p className="text-xs text-gray-400 text-center">
